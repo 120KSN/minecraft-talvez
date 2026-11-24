@@ -26,6 +26,7 @@
       <div id="hunger" class="hunger" aria-label="Fome"></div>
     </div>
     <div id="hotbar" class="hotbar" aria-label="Barra rápida"></div>
+    <div id="tool-status" class="tool-status"></div>
     <div class="help">WASD mover <span>•</span> Espaço pular <span>•</span> E inventário <span>•</span> ESC pausar</div>
   </section>
 
@@ -37,6 +38,7 @@
       <div class="menu-buttons">
         <button id="play-button" class="primary">Jogar</button>
         <button id="new-world-button">Criar novo mundo</button>
+        <button id="mode-button">Modo: Sobrevivência</button>
         <button id="settings-button">Configurações</button>
         <button id="exit-button" class="quiet">Sair</button>
       </div>
@@ -51,6 +53,7 @@
       <h2>Respire um pouco.</h2>
       <div class="menu-buttons">
         <button id="resume-button" class="primary">Continuar</button>
+        <button id="pause-mode-button">Alternar modo de jogo</button>
         <button id="save-menu-button">Salvar e voltar ao menu</button>
         <button id="pause-settings-button">Configurações</button>
       </div>
@@ -67,6 +70,8 @@
       <div id="inventory-grid" class="inventory-grid"></div>
       <div class="inventory-label">BARRA RÁPIDA</div>
       <div id="inventory-hotbar" class="inventory-grid hotbar-grid"></div>
+      <div class="inventory-label">CRAFTING</div>
+      <div id="crafting-grid" class="crafting-grid"></div>
       <p class="inventory-footer">Pressione <kbd>E</kbd> ou <kbd>ESC</kbd> para voltar ao mundo</p>
     </div>
   </section>

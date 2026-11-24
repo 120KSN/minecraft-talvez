@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { BLOCK, BLOCKS } from './blocks.js';
 
 export const CHUNK_SIZE = 16;
-export const WORLD_HEIGHT = 40;
+export const WORLD_HEIGHT = 64;
 const SEA_LEVEL = 10;
 const FACE_DATA = [
   { normal: [1, 0, 0], corners: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]], shade: 0.82 },
@@ -48,13 +48,33 @@ export class VoxelWorld {
   }
 
   terrain(x, z) {
-    const broad = valueNoise(x * 0.009, z * 0.009, this.seed);
-    const detail = valueNoise(x * 0.038, z * 0.038, this.seed + 11);
-    const ridge = 1 - Math.abs(valueNoise(x * 0.016, z * 0.016, this.seed + 29) * 2 - 1);
-    const height = Math.floor(7 + broad * 11 + detail * 3 + ridge * 5);
-    const biome = valueNoise(x * 0.012, z * 0.012, this.seed + 431);
+    const broad = valueNoise(x * 0.006, z * 0.006, this.seed);
+    const detail = valueNoise(x * 0.025, z * 0.025, this.seed + 11);
+    const ridge = valueNoise(x * 0.014, z * 0.014, this.seed + 29);
+    const moisture = valueNoise(x * 0.009, z * 0.009, this.seed + 431);
+    const temperature = valueNoise(x * 0.008, z * 0.008, this.seed + 733);
+    let biome = 'plain';
+    if (temperature > 0.68 && moisture < 0.45) biome = 'desert';
+    else if (temperature < 0.32) biome = 'snow';
+    else if (moisture < 0.28) biome = 'swamp';
+    else if (moisture > 0.62) biome = 'forest';
+    else if (broad > 0.72 || ridge > 0.78) biome = 'mountain';
+    const mountainBoost = biome === 'mountain' ? 13 * ridge : 0;
+    const plainHeight = 8 + broad * 8 + detail * 4;
+    const river = Math.abs(valueNoise(x * 0.018, z * 0.018, this.seed + 991) - 0.5);
+    const riverDepth = river < 0.018 ? Math.floor((0.018 - river) * 170) : 0;
+    let height = Math.floor(plainHeight + mountainBoost - riverDepth);
+    if (biome === 'swamp') height = Math.floor(SEA_LEVEL + 1 + detail * 2);
+    if (height <= SEA_LEVEL + 2) biome = 'beach';
     const beach = height <= SEA_LEVEL + 1;
-    return { height: Math.max(4, Math.min(WORLD_HEIGHT - 7, height)), beach, forest: biome > 0.56 };
+    return {
+      height: Math.max(4, Math.min(WORLD_HEIGHT - 9, height)),
+      beach,
+      forest: biome === 'forest' || biome === 'plain',
+      biome,
+      moisture,
+      temperature
+    };
   }
 
   treeBlock(x, y, z) {
@@ -67,10 +87,11 @@ export class VoxelWorld {
         const px = tx * cell + Math.floor(hash2(tx, tz, this.seed + 3) * cell);
         const pz = tz * cell + Math.floor(random * cell);
         const terrain = this.terrain(px, pz);
-        if (terrain.beach || (!terrain.forest && random < 0.91)) continue;
+        if (terrain.beach || terrain.biome === 'desert' || terrain.biome === 'snow' || (!terrain.forest && random < 0.84)) continue;
         const top = terrain.height;
-        if (x === px && z === pz && y > top && y <= top + 4) return BLOCK.WOOD;
-        const dy = y - (top + 3);
+        const trunkHeight = terrain.biome === 'forest' ? 5 : 4;
+        if (x === px && z === pz && y > top && y <= top + trunkHeight) return BLOCK.WOOD;
+        const dy = y - (top + trunkHeight - 1);
         const dx = Math.abs(x - px), dz = Math.abs(z - pz);
         if (dy >= 0 && dy <= 2 && dx <= 2 && dz <= 2 && dx + dz + Math.max(0, dy - 1) <= 4 && !(dy === 0 && dx < 1 && dz < 1)) return BLOCK.LEAVES;
       }
@@ -81,15 +102,44 @@ export class VoxelWorld {
   naturalBlock(x, y, z) {
     if (y < 0 || y >= WORLD_HEIGHT) return BLOCK.AIR;
     if (y === 0) return BLOCK.BEDROCK;
-    const { height, beach } = this.terrain(x, z);
+    const terrain = this.terrain(x, z);
+    const { height, beach, biome } = terrain;
     if (y <= height) {
-      if (y === height) return beach ? BLOCK.SAND : BLOCK.GRASS;
-      if (y >= height - 3) return beach ? BLOCK.SAND : BLOCK.DIRT;
+      if (y === height) {
+        if (biome === 'desert') return BLOCK.SAND;
+        if (biome === 'snow') return BLOCK.SNOW;
+        if (biome === 'swamp' && y <= SEA_LEVEL + 2) return BLOCK.DIRT;
+        return beach ? BLOCK.SAND : BLOCK.GRASS;
+      }
+      if (y >= height - 3) {
+        if (biome === 'desert') return BLOCK.SAND;
+        if (biome === 'snow') return y === height - 1 ? BLOCK.SNOW : BLOCK.DIRT;
+        return beach ? BLOCK.SAND : BLOCK.DIRT;
+      }
+      if (y > 4 && y < height - 4) {
+        const ore = hash2(x, z, this.seed + y * 53);
+        if (ore > 0.985) return BLOCK.COAL;
+      }
+      if (y > 5 && y < height - 5 && biome !== 'mountain') {
+        const cave1 = valueNoise(x * 0.08, z * 0.08, this.seed + y * 17);
+        const cave2 = valueNoise(x * 0.16 + y * 0.03, z * 0.16, this.seed + 821);
+        if (cave1 > 0.68 && cave2 > 0.64) return BLOCK.AIR;
+      }
       return BLOCK.STONE;
     }
     const tree = this.treeBlock(x, y, z);
     if (tree) return tree;
     if (y <= SEA_LEVEL) return BLOCK.WATER;
+    if (y === terrain.height + 1) {
+      if (terrain.biome === 'plain' || terrain.biome === 'forest') {
+        const vegetation = hash2(x, z, this.seed + 1201);
+        if (vegetation > 0.985) return BLOCK.FLOWER;
+        if (vegetation > 0.92) return BLOCK.TALL_GRASS;
+      }
+      if (terrain.biome === 'swamp') {
+        if (hash2(x, z, this.seed + 1403) > 0.97) return BLOCK.TALL_GRASS;
+      }
+    }
     return BLOCK.AIR;
   }
 
@@ -117,8 +167,7 @@ export class VoxelWorld {
     for (let z = 0; z < CHUNK_SIZE; z++) {
       for (let x = 0; x < CHUNK_SIZE; x++) {
         const wx = cx * CHUNK_SIZE + x, wz = cz * CHUNK_SIZE + z;
-        const top = this.terrain(wx, wz).height;
-        for (let y = 0; y <= Math.max(top, SEA_LEVEL); y++) {
+        for (let y = 0; y < WORLD_HEIGHT; y++) {
           data[(y * CHUNK_SIZE + z) * CHUNK_SIZE + x] = this.naturalBlock(wx, y, wz);
         }
       }
@@ -172,8 +221,8 @@ export class VoxelWorld {
             const neighborId = this.getBlock(wx + face.normal[0], y + face.normal[1], wz + face.normal[2]);
             if (neighborId && ((BLOCKS[neighborId]?.solid ?? true) || neighborId === id)) continue;
             const start = positions.length / 3;
-            const tile = id === BLOCK.GRASS && face.normal[1] !== 1 ? 8 : BLOCKS[id].tile;
-            const u0 = (tile * 16 + 0.5) / 144, u1 = ((tile + 1) * 16 - 0.5) / 144;
+            const tile = id === BLOCK.GRASS && face.normal[1] !== 1 ? 1 : BLOCKS[id].tile;
+            const u0 = (tile * 16 + 0.5) / 240, u1 = ((tile + 1) * 16 - 0.5) / 240;
             const v0 = 0.5 / 16, v1 = 15.5 / 16;
             const faceUvs = [[u0, v0], [u0, v1], [u1, v1], [u1, v0]];
             for (let i = 0; i < 6; i++) {

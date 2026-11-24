@@ -3,6 +3,9 @@ import { BLOCK, BLOCKS, blockItem, createBlockAtlas } from './blocks.js';
 import { Player } from './player.js';
 import { VoxelWorld, CHUNK_SIZE } from './world.js';
 import { newGameState, readSave, readSettings, writeSave, writeSettings } from './storage.js';
+import { RECIPES, TOOLS } from './items.js';
+import { canCraft, craftTool } from './crafting.js';
+import { EntityManager } from './entities.js';
 
 const $ = selector => document.querySelector(selector);
 const gameRoot = $('#game');
@@ -35,6 +38,7 @@ let ambientContext = null;
 let ambientGain = null;
 let lastPointerLocked = false;
 let selectedHit = null;
+let entityManager = null;
 const particles = [];
 
 function showToast(message) {
@@ -46,6 +50,8 @@ function showToast(message) {
 
 function updateHealthHud() {
   if (!player) return;
+  const status = $('.status');
+  if (status) status.classList.toggle('hidden', gameState?.mode === 'creative');
   $('#health').innerHTML = Array.from({ length: 10 }, (_, i) =>
     `<span class="${i < Math.ceil(player.health / 2) ? 'heart-full' : 'heart-empty'}">${i < Math.ceil(player.health / 2) ? '♥' : '♡'}</span>`
   ).join('');
@@ -67,28 +73,71 @@ function renderSlot(slot, index, selected = false) {
 
 function refreshInventory() {
   if (!gameState) return;
+  refreshToolStatus();
+  const inventory = gameState.mode === 'creative' ? gameState.creativeHotbar : gameState.inventory;
   hotbarRoot.replaceChildren();
-  for (let i = 0; i < 9; i++) hotbarRoot.append(renderSlot(gameState.inventory[i], i, i === gameState.selected));
+  for (let i = 0; i < 9; i++) hotbarRoot.append(renderSlot(inventory[i], i, i === gameState.selected));
   inventoryGrid.replaceChildren();
-  for (let i = 9; i < 36; i++) {
-    const button = renderSlot(gameState.inventory[i], i);
+  for (let i = gameState.mode === 'creative' ? 0 : 9; i < (gameState.mode === 'creative' ? 9 : 36); i++) {
+    const button = renderSlot(gameState.mode === 'creative' ? gameState.creativeHotbar[i] : gameState.inventory[i], i);
     button.addEventListener('click', () => {
       const selectedSlot = gameState.selected;
-      [gameState.inventory[selectedSlot], gameState.inventory[i]] = [gameState.inventory[i], gameState.inventory[selectedSlot]];
+      const target = gameState.mode === 'creative' ? gameState.creativeHotbar : gameState.inventory;
+      [target[selectedSlot], target[i]] = [target[i], target[selectedSlot]];
       refreshInventory();
       saveGame(false);
     });
     inventoryGrid.append(button);
   }
+
+  function refreshToolStatus() {
+    const root = $('#tool-status');
+    if (!root || gameState?.mode !== 'survival') {
+      if (root) root.textContent = '';
+      return;
+    }
+    const entries = Object.values(gameState.tools).filter(Boolean);
+    root.textContent = entries.length
+      ? entries.map(tool => `${TOOLS[tool.id].icon} ${TOOLS[tool.id].name}: ${tool.durability}/${TOOLS[tool.id].maxDurability}`)
+      : 'Sem ferramentas';
+  }
   inventoryHotbar.replaceChildren();
   for (let i = 0; i < 9; i++) {
-    const button = renderSlot(gameState.inventory[i], i, i === gameState.selected);
+    const button = renderSlot(inventory[i], i, i === gameState.selected);
     button.addEventListener('click', () => {
       gameState.selected = i;
       refreshInventory();
       saveGame(false);
     });
     inventoryHotbar.append(button);
+  }
+  refreshCrafting();
+}
+
+function refreshCrafting() {
+  const grid = $('#crafting-grid');
+  if (!grid) return;
+  grid.replaceChildren();
+  if (gameState?.mode !== 'survival') {
+    grid.innerHTML = '<p class="inventory-hint">O crafting fica disponível no modo Sobrevivência.</p>';
+    return;
+  }
+  for (const recipe of RECIPES) {
+    const button = document.createElement('button');
+    const craftable = canCraft(gameState.inventory, recipe);
+    button.type = 'button';
+    button.className = `craft-recipe${craftable ? '' : ' unavailable'}`;
+    button.disabled = !craftable;
+    button.textContent = `${TOOLS[recipe.result].icon} ${recipe.name}`;
+    button.title = recipe.ingredients.map(item => `${item.count}× bloco ${item.id}`).join(', ');
+    button.addEventListener('click', () => {
+      const result = craftTool(gameState, recipe.id);
+      if (!result) return;
+      showToast(`${TOOLS[recipe.result].name} criada.`);
+      refreshInventory();
+      saveGame(false);
+    });
+    grid.append(button);
   }
 }
 
@@ -164,6 +213,8 @@ function saveGame(notify = true) {
 function disposeGame() {
   if (player) player.dispose();
   player = null;
+  if (entityManager) entityManager.dispose();
+  entityManager = null;
   if (world) world.dispose();
   world = null;
   for (const particle of particles) {
@@ -211,9 +262,11 @@ function beginWorld(state) {
     hunger: state.hunger,
     pointerLockElement: renderer.domElement,
     isActive: () => mode === 'playing',
+    mode: state.mode,
     onDamage: () => showToast('Você sofreu dano!'),
     onDeath: () => showToast('Você renasceu no ponto inicial.')
   });
+  entityManager = new EntityManager(scene, world);
   renderer.shadowMap.enabled = true;
   gameState.time = Number.isFinite(state.time) ? state.time : 0.22;
   refreshInventory();
@@ -313,19 +366,35 @@ function canAddItem(blockId) {
 function breakBlock(hit) {
   if (!hit || hit.id === BLOCK.BEDROCK) return;
   const itemId = hit.id;
-  if (itemId !== BLOCK.WATER && !canAddItem(itemId)) {
+  if (gameState.mode === 'survival' && itemId !== BLOCK.WATER && !canAddItem(itemId)) {
     showToast('Inventário cheio.');
     return;
   }
   world.setBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
-  if (itemId !== BLOCK.WATER && !addItem(itemId)) showToast('Inventário cheio.');
+  if (gameState.mode === 'survival' && itemId !== BLOCK.WATER && !addItem(itemId)) showToast('Inventário cheio.');
+  if (gameState.mode === 'survival') {
+    const toolEntry = Object.values(gameState.tools).find(tool => {
+      if (!tool) return false;
+      const definition = TOOLS[tool.id];
+      return definition?.types.includes(itemId);
+    });
+    if (toolEntry) {
+      toolEntry.durability -= 1;
+      if (toolEntry.durability <= 0) {
+        const slot = Object.keys(gameState.tools).find(key => gameState.tools[key] === toolEntry);
+        if (slot) gameState.tools[slot] = null;
+        showToast('Uma ferramenta quebrou.');
+      }
+    }
+  }
   spawnBreakParticles(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5, itemId);
   refreshInventory();
 }
 
 function placeBlock(hit) {
   if (!hit?.previous) return;
-  const slot = gameState.inventory[gameState.selected];
+  const inventory = gameState.mode === 'creative' ? gameState.creativeHotbar : gameState.inventory;
+  const slot = inventory[gameState.selected];
   if (!slot || !BLOCKS[slot.id] || slot.id === BLOCK.WATER || slot.id === BLOCK.BEDROCK) {
     showToast('Selecione um bloco para construir.');
     return;
@@ -337,13 +406,16 @@ function placeBlock(hit) {
   if (overlapsPlayer) return;
   if (world.getBlock(x, y, z) !== BLOCK.AIR && world.getBlock(x, y, z) !== BLOCK.WATER) return;
   world.setBlock(x, y, z, slot.id);
-  slot.count--;
-  if (slot.count <= 0) gameState.inventory[gameState.selected] = null;
+  if (gameState.mode === 'survival') {
+    slot.count--;
+    if (slot.count <= 0) inventory[gameState.selected] = null;
+  }
   refreshInventory();
 }
 
 function handleMouseAction(event) {
   if (mode !== 'playing' || (document.pointerLockElement && document.pointerLockElement !== renderer.domElement)) return;
+  if (event.button === 0 && entityManager?.hit(camera, gameState.mode === 'survival' ? 4 : 20)) return;
   const hit = castBlockRay();
   if (event.button === 0) breakBlock(hit);
   if (event.button === 2) placeBlock(hit);
@@ -362,6 +434,8 @@ function animate() {
         gameState.health = player.health;
         gameState.hunger = player.hunger;
       }
+      if (world) world.timePhase = gameState?.time;
+      if (entityManager) entityManager.update(dt, player, gameState);
       updateHealthHud();
       autosaveTimer += dt;
       if (autosaveTimer >= 45) {
@@ -424,6 +498,7 @@ function toggleInventory() {
 function pauseGame() {
   if (mode !== 'playing' && mode !== 'inventory') return;
   setMode('pause');
+  if (gameState) $('#pause-mode-button').textContent = `Modo: ${gameState.mode === 'survival' ? 'Sobrevivência' : 'Criativo'} · Alternar`;
   if (document.pointerLockElement) document.exitPointerLock();
   saveGame(false);
 }
@@ -478,12 +553,29 @@ function loadSavedOrNew() {
 $('#play-button').addEventListener('click', loadSavedOrNew);
 $('#new-world-button').addEventListener('click', () => {
   if (localStorage.getItem('blocos-sandbox-save-v1') && !window.confirm('Criar um mundo novo? O mundo salvo atual será substituído.')) return;
-  beginWorld(newGameState());
+  const state = newGameState();
+  state.mode = selectedMode;
+  beginWorld(state);
+});
+let selectedMode = 'survival';
+$('#mode-button').addEventListener('click', () => {
+  selectedMode = selectedMode === 'survival' ? 'creative' : 'survival';
+  $('#mode-button').textContent = `Modo: ${selectedMode === 'survival' ? 'Sobrevivência' : 'Criativo'}`;
 });
 $('#exit-button').addEventListener('click', () => {
   $('#menu-note').textContent = 'Você pode fechar esta aba. Seu mundo salvo permanece neste navegador.';
 });
 $('#resume-button').addEventListener('click', resumeGame);
+$('#pause-mode-button').addEventListener('click', () => {
+  if (!gameState) return;
+  gameState.mode = gameState.mode === 'survival' ? 'creative' : 'survival';
+  player?.setMode(gameState.mode);
+  $('#pause-mode-button').textContent = `Modo: ${gameState.mode === 'survival' ? 'Sobrevivência' : 'Criativo'} · Alternar`;
+  refreshInventory();
+  updateHealthHud();
+  showToast(`Modo ${gameState.mode === 'survival' ? 'Sobrevivência' : 'Criativo'} ativado.`);
+  saveGame(false);
+});
 $('#save-menu-button').addEventListener('click', () => {
   saveGame(false);
   if (document.pointerLockElement) document.exitPointerLock();
@@ -533,6 +625,10 @@ window.addEventListener('pagehide', () => saveGame(false));
 try {
   const saved = readSave();
   $('#play-button').textContent = saved ? 'Continuar' : 'Jogar';
+  if (saved?.mode) {
+    selectedMode = saved.mode;
+    $('#mode-button').textContent = `Modo: ${selectedMode === 'survival' ? 'Sobrevivência' : 'Criativo'}`;
+  }
 } catch (error) {
   console.error('Falha ao verificar o salvamento:', error);
   $('#menu-note').textContent = 'O salvamento atual não pôde ser lido.';

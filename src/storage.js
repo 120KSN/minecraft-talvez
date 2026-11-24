@@ -6,6 +6,10 @@ export function newGameState(seed = Math.floor(Math.random() * 0xffffffff)) {
     seed: seed >>> 0,
     edits: {},
     position: null,
+    mode: 'survival',
+    tools: { '1': null, '2': null, '3': null },
+    craftUnlocked: [],
+    creativeHotbar: Array.from({ length: 9 }, (_, i) => i < 6 ? { id: i + 1, count: 64 } : null),
     inventory: [
       { id: 1, count: 32 }, { id: 2, count: 32 }, { id: 3, count: 24 },
       { id: 4, count: 24 }, { id: 5, count: 16 }, { id: 6, count: 16 },
@@ -32,6 +36,12 @@ export function readSave() {
       : null;
   });
   data.selected = Math.max(0, Math.min(8, Number(data.selected) || 0));
+  if (!['survival', 'creative'].includes(data.mode)) data.mode = 'survival';
+  if (!data.tools || typeof data.tools !== 'object') data.tools = { '1': null, '2': null, '3': null };
+  if (!Array.isArray(data.craftUnlocked)) data.craftUnlocked = [];
+  if (!Array.isArray(data.creativeHotbar)) {
+    data.creativeHotbar = Array.from({ length: 9 }, (_, i) => i < 6 ? { id: i + 1, count: 64 } : null);
+  }
   const health = Number(data.health), hunger = Number(data.hunger);
   data.health = Math.max(0, Math.min(20, Number.isFinite(health) ? health : 20));
   data.hunger = Math.max(0, Math.min(20, Number.isFinite(hunger) ? hunger : 20));

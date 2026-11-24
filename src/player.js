@@ -6,7 +6,7 @@ const PLAYER_HEIGHT = 1.78;
 const EYE_HEIGHT = 1.62;
 
 export class Player {
-  constructor(camera, { position, sensitivity = 1, health = 20, hunger = 20, pointerLockElement, isActive = () => true, onDamage = () => {}, onDeath = () => {} }) {
+  constructor(camera, { position, sensitivity = 1, health = 20, hunger = 20, pointerLockElement, isActive = () => true, mode = 'survival', onDamage = () => {}, onDeath = () => {} }) {
     this.camera = camera;
     this.position = position ? new THREE.Vector3(position.x, position.y, position.z) : new THREE.Vector3(0, 20, 0);
     this.velocityY = 0;
@@ -19,6 +19,8 @@ export class Player {
     this.onDeath = onDeath;
     this.pointerLockElement = pointerLockElement;
     this.isActive = isActive;
+    this.mode = mode;
+    this.flying = false;
     this.keys = new Set();
     this.onGround = false;
     this.sprinting = false;
@@ -46,6 +48,15 @@ export class Player {
   }
 
   setSensitivity(value) { this.sensitivity = value; }
+  setMode(mode) {
+    this.mode = mode;
+    if (mode === 'creative') {
+      this.health = 20;
+      this.hunger = 20;
+      this.velocityY = 0;
+      this.flying = false;
+    }
+  }
 
   isSolid(world, x, y, z) {
     const id = world.getBlock(x, y, z);
@@ -77,6 +88,7 @@ export class Player {
   }
 
   damage(amount) {
+    if (this.mode === 'creative') return;
     const now = performance.now();
     if (now - this.lastDamage < 800) return;
     this.lastDamage = now;
@@ -97,6 +109,24 @@ export class Player {
     if (dx && !this.collides(world, this.position.x + dx, this.position.y, this.position.z)) this.position.x += dx;
     if (dz && !this.collides(world, this.position.x, this.position.y, this.position.z + dz)) this.position.z += dz;
 
+    if (this.mode === 'creative' && this.keys.has('KeyF')) {
+      this.flying = !this.flying;
+      this.keys.delete('KeyF');
+    }
+    if (this.mode === 'creative' && this.flying) {
+      const vertical = (this.keys.has('Space') ? 1 : 0) - (this.keys.has('ControlLeft') || this.keys.has('ControlRight') ? 1 : 0);
+      const flySpeed = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? 12 : 7;
+      const next = new THREE.Vector3(dx, vertical * flySpeed * dt, dz);
+      if (!this.collides(world, this.position.x + next.x, this.position.y + next.y, this.position.z + next.z)) {
+        this.position.x += next.x;
+        this.position.y += next.y;
+        this.position.z += next.z;
+      }
+      this.velocityY = 0;
+      this.onGround = false;
+      this.syncCamera();
+      return;
+    }
     if (this.onGround && this.keys.has('Space')) {
       this.velocityY = 8.3;
       this.onGround = false;
@@ -112,30 +142,33 @@ export class Player {
       this.position.y = blockY + 1;
       this.onGround = true;
       const fall = this.fallStart - this.position.y;
-      if (fall > 4) this.damage(Math.min(20, Math.floor(fall - 3)));
+      if (this.mode === 'survival' && fall > 4) this.damage(Math.min(20, Math.floor(fall - 3)));
       this.velocityY = 0;
     } else {
       this.position.y = Math.floor(nextY + PLAYER_HEIGHT - 0.025) - PLAYER_HEIGHT;
       this.velocityY = 0;
     }
     if (this.position.y > this.fallStart) this.fallStart = this.position.y;
-    if (this.position.y < -8) this.respawn(world);
+    if (this.mode === 'survival' && this.position.y < -8) this.respawn(world);
+    if (this.mode === 'creative' && this.position.y < -8) this.position.y = 25;
     if (!wasGrounded && this.onGround) this.fallStart = this.position.y;
 
-    this.hungerTimer += dt;
-    if (this.hungerTimer > 22) {
-      this.hungerTimer = 0;
-      this.hunger = Math.max(0, this.hunger - 1);
-      if (this.hunger === 0) this.damage(1);
-    }
-    if (this.hunger >= 18 && this.health < 20) {
-      this.regenTimer += dt;
-      if (this.regenTimer > 4) {
-        this.regenTimer = 0;
-        this.health = Math.min(20, this.health + 1);
+    if (this.mode === 'survival') this.hungerTimer += dt;
+    if (this.mode === 'survival') {
+      if (this.hungerTimer > 22) {
+        this.hungerTimer = 0;
+        this.hunger = Math.max(0, this.hunger - 1);
+        if (this.hunger === 0) this.damage(1);
       }
-    } else this.regenTimer = 0;
-    if (this.health <= 0) this.respawn(world);
+      if (this.hunger >= 18 && this.health < 20) {
+        this.regenTimer += dt;
+        if (this.regenTimer > 4) {
+          this.regenTimer = 0;
+          this.health = Math.min(20, this.health + 1);
+        }
+      } else this.regenTimer = 0;
+      if (this.health <= 0) this.respawn(world);
+    }
     this.syncCamera();
   }
 

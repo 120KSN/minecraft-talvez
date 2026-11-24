@@ -21,3 +21,10 @@ Abra `http://localhost:8000`. É necessária conexão com a internet para carreg
 - **ESC** pausa; use o menu para retomar ou salvar e voltar
 
 O mundo, as alterações e os dados do jogador são salvos no armazenamento local do navegador.
+
+## Modos
+
+- **Sobrevivência:** vida, fome, drops, crafting, ferramentas e durabilidade.
+- **Criativo:** voo com `F`, recursos ilimitados, remoção instantânea e inventário criativo.
+
+Use o botão de modo no menu inicial ou o botão equivalente no menu de pausa para alternar modos em uma partida existente.
