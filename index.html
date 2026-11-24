@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#17251e">
+  <title>Blocos — Mundo Sandbox</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js"
+      }
+    }
+  </script>
+  <script type="module" src="src/main.js"></script>
+</head>
+<body>
+  <div id="game"></div>
+  <div id="vignette"></div>
+  <div id="crosshair" aria-hidden="true"><i></i><b></b></div>
+
+  <section id="hud" class="hidden" aria-label="Informações do jogador">
+    <div class="status">
+      <div id="health" class="hearts" aria-label="Vida"></div>
+      <div id="hunger" class="hunger" aria-label="Fome"></div>
+    </div>
+    <div id="hotbar" class="hotbar" aria-label="Barra rápida"></div>
+    <div class="help">WASD mover <span>•</span> Espaço pular <span>•</span> E inventário <span>•</span> ESC pausar</div>
+  </section>
+
+  <section id="menu" class="screen">
+    <div class="panel title-panel">
+      <p class="eyebrow">UM PEQUENO MUNDO DE BLOCOS</p>
+      <h1>Blocos<span>.</span></h1>
+      <p class="subtitle">Explore. Colete. Construa.</p>
+      <div class="menu-buttons">
+        <button id="play-button" class="primary">Jogar</button>
+        <button id="new-world-button">Criar novo mundo</button>
+        <button id="settings-button">Configurações</button>
+        <button id="exit-button" class="quiet">Sair</button>
+      </div>
+      <p id="menu-note" class="note"></p>
+    </div>
+    <p class="credit">MUNDO PROCEDURAL · SUA PARTIDA É SALVA NESTE NAVEGADOR</p>
+  </section>
+
+  <section id="pause" class="screen hidden">
+    <div class="panel compact-panel">
+      <p class="eyebrow">PAUSA</p>
+      <h2>Respire um pouco.</h2>
+      <div class="menu-buttons">
+        <button id="resume-button" class="primary">Continuar</button>
+        <button id="save-menu-button">Salvar e voltar ao menu</button>
+        <button id="pause-settings-button">Configurações</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="inventory" class="screen hidden">
+    <div class="panel inventory-panel">
+      <div class="inventory-heading">
+        <div><p class="eyebrow">SEUS RECURSOS</p><h2>Inventário</h2></div>
+        <button id="close-inventory" class="close-button" aria-label="Fechar inventário">×</button>
+      </div>
+      <p class="inventory-hint">Clique em um item para trocá-lo com o espaço selecionado na barra rápida.</p>
+      <div id="inventory-grid" class="inventory-grid"></div>
+      <div class="inventory-label">BARRA RÁPIDA</div>
+      <div id="inventory-hotbar" class="inventory-grid hotbar-grid"></div>
+      <p class="inventory-footer">Pressione <kbd>E</kbd> ou <kbd>ESC</kbd> para voltar ao mundo</p>
+    </div>
+  </section>
+
+  <section id="settings" class="screen hidden">
+    <div class="panel compact-panel settings-panel">
+      <div class="inventory-heading">
+        <div><p class="eyebrow">AJUSTES</p><h2>Configurações</h2></div>
+        <button id="close-settings" class="close-button" aria-label="Fechar configurações">×</button>
+      </div>
+      <label class="setting-row">Distância de renderização <output id="distance-value"></output>
+        <input id="distance-setting" type="range" min="1" max="4" step="1" value="2">
+      </label>
+      <label class="setting-row">Sensibilidade do mouse <output id="sensitivity-value"></output>
+        <input id="sensitivity-setting" type="range" min="0.5" max="2" step="0.1" value="1">
+      </label>
+      <label class="setting-row">Volume ambiente <output id="volume-value"></output>
+        <input id="volume-setting" type="range" min="0" max="0.3" step="0.01" value="0.04">
+      </label>
+      <button id="settings-done" class="primary">Pronto</button>
+    </div>
+  </section>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
